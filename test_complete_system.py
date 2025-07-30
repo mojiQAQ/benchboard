@@ -90,16 +90,10 @@ def generate_test_data(team_num: int = 1) -> Dict:
         "totalVerifyErrorRate": max(0.1, 2.5 - team_num * 0.3),
         "pending": 15 + team_num,
         "operations": {
-            "sensorData": {"operations": 500 + team_num * 100, "errors": 10 - team_num},
-            "sensorRW": {"operations": 200 + team_num * 50, "errors": 5},
-            "batchRW": {"operations": 150 + team_num * 30, "errors": 3},
-            "query": {"operations": 130 + team_num * 20, "errors": 2}
+            "sensorData": {"operations": 500 + team_num * 100, "errors": 10 - team_num}
         },
         "highPriorityStats": {
             "sensorDataCount": 50 + team_num * 10,
-            "sensorRWCount": 20 + team_num * 5,
-            "batchRWCount": 15 + team_num * 3,
-            "queryCount": 13 + team_num * 2,
             "totalCount": 98 + team_num * 20,
             "percentage": 10.0 + team_num
         },
@@ -119,24 +113,6 @@ def generate_test_data(team_num: int = 1) -> Dict:
                 "highPriorityMin": base_latency * 0.2,
                 "highPriorityMax": base_latency * 3,
                 "highPriorityBuckets": [20, 15, 10, 3, 2, 0, 0, 0, 0, 0, 0, 0]
-            },
-            "sensorRW": {
-                "avg": base_latency + 10,
-                "min": base_latency * 0.4,
-                "max": base_latency * 4,
-                "buckets": [40, 60, 50, 30, 15, 5, 0, 0, 0, 0, 0, 0]
-            },
-            "batchRW": {
-                "avg": base_latency + 30,
-                "min": base_latency * 0.6,
-                "max": base_latency * 8,
-                "buckets": [20, 40, 35, 25, 20, 8, 2, 0, 0, 0, 0, 0]
-            },
-            "query": {
-                "avg": base_latency - 10,
-                "min": base_latency * 0.2,
-                "max": base_latency * 3,
-                "buckets": [60, 40, 20, 8, 2, 0, 0, 0, 0, 0, 0, 0]
             }
         }
     }

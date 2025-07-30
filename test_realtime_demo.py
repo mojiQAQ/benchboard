@@ -112,26 +112,11 @@ class RealtimeDemo:
                 "sensorData": {
                     "operations": int(total_requests * 0.5),
                     "errors": int(error_count * 0.6)
-                },
-                "sensorRW": {
-                    "operations": int(total_requests * 0.25),
-                    "errors": int(error_count * 0.2)
-                },
-                "batchRW": {
-                    "operations": int(total_requests * 0.15),
-                    "errors": int(error_count * 0.15)
-                },
-                "query": {
-                    "operations": int(total_requests * 0.1),
-                    "errors": int(error_count * 0.05)
                 }
             },
             "highPriorityStats": {
                 "sensorDataCount": random.randint(40, 80),
-                "sensorRWCount": random.randint(15, 35),
-                "batchRWCount": random.randint(10, 25),
-                "queryCount": random.randint(8, 20),
-                "totalCount": random.randint(80, 150),
+                "totalCount": random.randint(98, 160),
                 "percentage": random.uniform(8.0, 15.0)
             },
             "performanceMetrics": {
@@ -143,31 +128,25 @@ class RealtimeDemo:
                 "sensorData": {
                     "avg": current_latency,
                     "min": current_latency * 0.3,
-                    "max": current_latency * 4,
-                    "buckets": self.generate_latency_buckets(current_latency),
-                    "highPriorityCount": random.randint(40, 70),
+                    "max": current_latency * 5,
+                    "buckets": [
+                        random.randint(80, 120), random.randint(150, 250), 
+                        random.randint(100, 180), random.randint(50, 100), 
+                        random.randint(30, 70), random.randint(10, 30), 
+                        random.randint(5, 15), random.randint(2, 8), 
+                        random.randint(1, 3), random.randint(0, 2), 
+                        0, 0
+                    ],
+                    "highPriorityCount": random.randint(40, 80),
                     "highPriorityAvg": current_latency * 0.7,
                     "highPriorityMin": current_latency * 0.2,
-                    "highPriorityMax": current_latency * 2.5,
-                    "highPriorityBuckets": self.generate_latency_buckets(current_latency * 0.7, True)
-                },
-                "sensorRW": {
-                    "avg": current_latency + 15,
-                    "min": current_latency * 0.4,
-                    "max": current_latency * 3.5,
-                    "buckets": self.generate_latency_buckets(current_latency + 15)
-                },
-                "batchRW": {
-                    "avg": current_latency + 40,
-                    "min": current_latency * 0.8,
-                    "max": current_latency * 6,
-                    "buckets": self.generate_latency_buckets(current_latency + 40)
-                },
-                "query": {
-                    "avg": current_latency - 8,
-                    "min": current_latency * 0.25,
-                    "max": current_latency * 2.8,
-                    "buckets": self.generate_latency_buckets(current_latency - 8)
+                    "highPriorityMax": current_latency * 3,
+                    "highPriorityBuckets": [
+                        random.randint(15, 25), random.randint(10, 20), 
+                        random.randint(8, 15), random.randint(3, 8), 
+                        random.randint(1, 5), random.randint(0, 3), 
+                        0, 0, 0, 0, 0, 0
+                    ]
                 }
             }
         }

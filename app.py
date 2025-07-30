@@ -41,15 +41,9 @@ class OperationStat(BaseModel):
 
 class OperationsStats(BaseModel):
     sensorData: OperationStat
-    sensorRW: OperationStat
-    batchRW: OperationStat
-    query: OperationStat
 
 class HighPriorityStats(BaseModel):
     sensorDataCount: int = Field(..., description="传感器数据上报高优先级请求数")
-    sensorRWCount: int = Field(..., description="传感器读写操作高优先级请求数")
-    batchRWCount: int = Field(..., description="批量操作高优先级请求数")
-    queryCount: int = Field(..., description="查询操作高优先级请求数")
     totalCount: int = Field(..., description="高优先级请求总数")
     percentage: float = Field(..., description="高优先级请求占比（%）")
 
@@ -71,9 +65,6 @@ class LatencyDistribution(BaseModel):
 
 class LatencyAnalysis(BaseModel):
     sensorData: LatencyDistribution
-    sensorRW: LatencyDistribution
-    batchRW: LatencyDistribution
-    query: LatencyDistribution
 
 class StatsReport(BaseModel):
     totalElapsed: float = Field(..., description="总运行时间（秒）")
@@ -138,34 +129,30 @@ def calculate_overall_metrics(stats: Dict) -> Dict:
     if avg_latency is None:
         latency_analysis = stats.get('latencyAnalysis', {})
         
-        # 计算总体平均延迟
-        total_latency = 0
-        total_requests = 0
-        
-        for operation_type in ['sensorData', 'sensorRW', 'batchRW', 'query']:
-            if operation_type in latency_analysis:
-                op_data = latency_analysis[operation_type]
-                op_requests = sum(op_data.get('buckets', []))
-                if op_requests > 0:
-                    total_latency += op_data.get('avg', 0) * op_requests
-                    total_requests += op_requests
-        
-        avg_latency = total_latency / total_requests if total_requests > 0 else 0
+        # 现在只处理sensorData操作类型
+        if 'sensorData' in latency_analysis:
+            op_data = latency_analysis['sensorData']
+            op_requests = sum(op_data.get('buckets', []))
+            if op_requests > 0:
+                avg_latency = op_data.get('avg', 0)
+            else:
+                avg_latency = 0
+        else:
+            avg_latency = 0
     
     # 如果高优先级延迟字段不存在，回退到旧的计算方式
     if high_priority_latency is None:
         latency_analysis = stats.get('latencyAnalysis', {})
-        total_high_priority_latency = 0
-        total_high_priority_count = 0
         
-        for operation_type in ['sensorData', 'sensorRW', 'batchRW', 'query']:
-            if operation_type in latency_analysis:
-                op_data = latency_analysis[operation_type]
-                if op_data.get('highPriorityAvg') and op_data.get('highPriorityCount'):
-                    total_high_priority_latency += op_data['highPriorityAvg'] * op_data['highPriorityCount']
-                    total_high_priority_count += op_data['highPriorityCount']
-        
-        high_priority_latency = total_high_priority_latency / total_high_priority_count if total_high_priority_count > 0 else 0
+        # 现在只处理sensorData操作类型
+        if 'sensorData' in latency_analysis:
+            op_data = latency_analysis['sensorData']
+            if op_data.get('highPriorityAvg') and op_data.get('highPriorityCount'):
+                high_priority_latency = op_data['highPriorityAvg']
+            else:
+                high_priority_latency = 0
+        else:
+            high_priority_latency = 0
     
     # 计算总体P99延迟（使用sensorData作为主要指标）
     latency_analysis = stats.get('latencyAnalysis', {})

@@ -92,16 +92,10 @@ class APITester:
             "totalVerifyErrorRate": 1.8,
             "pending": 15,
             "operations": {
-                "sensorData": {"operations": 500, "errors": 10},
-                "sensorRW": {"operations": 200, "errors": 5},
-                "batchRW": {"operations": 150, "errors": 3},
-                "query": {"operations": 130, "errors": 2}
+                "sensorData": {"operations": 500, "errors": 10}
             },
             "highPriorityStats": {
                 "sensorDataCount": 50,
-                "sensorRWCount": 20,
-                "batchRWCount": 15,
-                "queryCount": 13,
                 "totalCount": 98,
                 "percentage": 10.0
             },
@@ -115,25 +109,12 @@ class APITester:
                     "avg": 45.2,
                     "min": 12.1,
                     "max": 234.5,
-                    "buckets": [100, 200, 150, 80, 50, 20, 10, 5, 2, 1, 0, 0]
-                },
-                "sensorRW": {
-                    "avg": 52.3,
-                    "min": 15.2,
-                    "max": 198.7,
-                    "buckets": [40, 60, 50, 30, 15, 5, 0, 0, 0, 0, 0, 0]
-                },
-                "batchRW": {
-                    "avg": 89.4,
-                    "min": 25.6,
-                    "max": 432.1,
-                    "buckets": [20, 40, 35, 25, 20, 8, 2, 0, 0, 0, 0, 0]
-                },
-                "query": {
-                    "avg": 31.8,
-                    "min": 8.9,
-                    "max": 145.3,
-                    "buckets": [60, 40, 20, 8, 2, 0, 0, 0, 0, 0, 0, 0]
+                    "buckets": [100, 200, 150, 80, 50, 20, 10, 5, 2, 1, 0, 0],
+                    "highPriorityCount": 50,
+                    "highPriorityAvg": 32.1,
+                    "highPriorityMin": 8.5,
+                    "highPriorityMax": 156.2,
+                    "highPriorityBuckets": [20, 15, 10, 3, 2, 0, 0, 0, 0, 0, 0, 0]
                 }
             }
         }
