@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BenchBoard - 压测结果看板</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(2, 1fr);
+            gap: 20px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        .team-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            min-height: 350px;
+        }
+
+        .team-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+        }
+
+        .team-card.empty {
+            background: rgba(255, 255, 255, 0.3);
+            border: 2px dashed rgba(255, 255, 255, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 1.2rem;
+        }
+
+        .team-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .team-name {
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .team-status {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+
+        .status-active {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .status-inactive {
+            background: #f44336;
+            color: white;
+        }
+
+        .key-metrics {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+
+        .metric-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .metric-card.qps {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+        }
+
+        .metric-card.latency {
+            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+        }
+
+        .metric-card.p99 {
+            background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%);
+        }
+
+        .metric-card.loss {
+            background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
+        }
+
+        .metric-value {
+            font-size: 1.4rem;
+            font-weight: bold;
+            margin-bottom: 2px;
+        }
+
+        .metric-label {
+            font-size: 0.7rem;
+            opacity: 0.9;
+        }
+
+        .detailed-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .stat-item {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 6px;
+            border-left: 3px solid #007bff;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: #666;
+            margin-bottom: 3px;
+        }
+
+        .stat-value {
+            font-size: 1rem;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .stat-value.highlight {
+            color: #007bff;
+        }
+
+        .stat-value.error {
+            color: #dc3545;
+        }
+
+        .stat-value.success {
+            color: #28a745;
+        }
+
+        .best-records {
+            background: linear-gradient(135deg, #ffd700 0%, #ffb300 100%);
+            color: #333;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .best-records h4 {
+            font-size: 0.8rem;
+            margin-bottom: 5px;
+            text-align: center;
+        }
+
+        .record-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .record-item {
+            text-align: center;
+            font-size: 0.7rem;
+        }
+
+        .record-value {
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        .timestamps {
+            position: absolute;
+            bottom: 10px;
+            right: 15px;
+            font-size: 0.65rem;
+            color: #666;
+            text-align: right;
+            line-height: 1.2;
+        }
+
+        .timestamp-label {
+            font-weight: bold;
+            margin-bottom: 2px;
+        }
+
+        .high-priority-section {
+            background: #e3f2fd;
+            padding: 8px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            border-left: 3px solid #2196F3;
+        }
+
+        .high-priority-title {
+            font-size: 0.8rem;
+            font-weight: bold;
+            color: #1976D2;
+            margin-bottom: 5px;
+        }
+
+        .high-priority-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        @media (max-width: 1400px) {
+            .dashboard-grid {
+                grid-template-columns: repeat(2, 1fr);
+                grid-template-rows: repeat(3, 1fr);
+            }
+        }
+
+        @media (max-width: 900px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+                grid-template-rows: repeat(6, 1fr);
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            .key-metrics {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 BenchBoard 性能监控看板</h1>
+        <p>实时监控各小组QPS、延迟、数据丢失率等关键指标</p>
+    </div>
+
+    <div class="dashboard-grid" id="dashboard">
+        <!-- 动态生成团队卡片 -->
+    </div>
+
+    <script>
+        const socket = io();
+        const teams = new Map();
+        const maxTeams = 6;
+
+        // 初始化看板
+        function initDashboard() {
+            const dashboard = document.getElementById('dashboard');
+            for (let i = 0; i < maxTeams; i++) {
+                const card = document.createElement('div');
+                card.className = 'team-card empty';
+                card.innerHTML = `<div>等待小组 ${i + 1} 连接...</div>`;
+                card.id = `team-${i}`;
+                dashboard.appendChild(card);
+            }
+        }
+
+        // 格式化数字
+        function formatNumber(num) {
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1) + 'M';
+            } else if (num >= 1000) {
+                return (num / 1000).toFixed(1) + 'K';
+            }
+            return num.toString();
+        }
+
+        // 格式化延迟
+        function formatLatency(ms) {
+            if (ms < 1000) {
+                return ms.toFixed(1) + 'ms';
+            } else {
+                return (ms / 1000).toFixed(1) + 's';
+            }
+        }
+
+        // 格式化时间
+        function formatTime(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = new Date(timestamp);
+            return date.toLocaleString('zh-CN', {
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+
+        // 创建团队卡片
+        function createTeamCard(teamId, teamName, stats, metrics, timestamp, bestQps, bestQpsTime, bestLatency, bestLatencyTime) {
+            const card = document.createElement('div');
+            card.className = 'team-card';
+            card.id = `team-${teamId}`;
+
+            const lastUpdate = formatTime(timestamp);
+            const isActive = (new Date() - new Date(timestamp)) < 300000; // 5分钟内有更新
+
+            // 计算高优先级数据
+            const highPriorityStats = stats.highPriorityStats || {};
+            const highPriorityPercentage = highPriorityStats.percentage || 0;
+            const highPriorityLatency = metrics.high_priority_latency || 0;
+
+            card.innerHTML = `
+                <div class="team-header">
+                    <div class="team-name">${teamName}</div>
+                    <div class="team-status ${isActive ? 'status-active' : 'status-inactive'}">
+                        ${isActive ? '活跃' : '离线'}
+                    </div>
+                </div>
+                
+                <div class="key-metrics">
+                    <div class="metric-card qps">
+                        <div class="metric-value">${stats.performanceMetrics.avgCompletedQPS.toFixed(1)}</div>
+                        <div class="metric-label">QPS</div>
+                    </div>
+                    <div class="metric-card latency">
+                        <div class="metric-value">${formatLatency(metrics.avg_latency)}</div>
+                        <div class="metric-label">平均延迟</div>
+                    </div>
+                    <div class="metric-card p99">
+                        <div class="metric-value">${formatLatency(metrics.p99_latency)}</div>
+                        <div class="metric-label">P99延迟</div>
+                    </div>
+                    <div class="metric-card loss">
+                        <div class="metric-value">${metrics.data_loss_rate.toFixed(2)}%</div>
+                        <div class="metric-label">数据丢失率</div>
+                    </div>
+                </div>
+
+                <div class="high-priority-section">
+                    <div class="high-priority-title">🔥 高优先级性能</div>
+                    <div class="high-priority-grid">
+                        <div>
+                            <div class="stat-label">占比</div>
+                            <div class="stat-value highlight">${highPriorityPercentage.toFixed(1)}%</div>
+                        </div>
+                        <div>
+                            <div class="stat-label">平均延迟</div>
+                            <div class="stat-value ${highPriorityLatency > 0 ? 'success' : ''}">${highPriorityLatency > 0 ? formatLatency(highPriorityLatency) : 'N/A'}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="detailed-stats">
+                    <div class="stat-item">
+                        <div class="stat-label">总运行时间</div>
+                        <div class="stat-value">${(stats.totalElapsed / 60).toFixed(1)}min</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">错误率</div>
+                        <div class="stat-value error">${stats.performanceMetrics.errorRate.toFixed(2)}%</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">完成请求</div>
+                        <div class="stat-value success">${formatNumber(stats.totalOps)}</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">待处理</div>
+                        <div class="stat-value">${formatNumber(stats.pending)}</div>
+                    </div>
+                </div>
+
+                ${bestQps > 0 || bestLatency ? `
+                <div class="best-records">
+                    <h4>🏆 最佳成绩</h4>
+                    <div class="record-grid">
+                        ${bestQps > 0 ? `
+                        <div class="record-item">
+                            <div>最佳QPS</div>
+                            <div class="record-value">${bestQps.toFixed(1)}</div>
+                            <div>${formatTime(bestQpsTime)}</div>
+                        </div>
+                        ` : ''}
+                        ${bestLatency ? `
+                        <div class="record-item">
+                            <div>最佳延迟</div>
+                            <div class="record-value">${formatLatency(bestLatency)}</div>
+                            <div>${formatTime(bestLatencyTime)}</div>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+                ` : ''}
+
+                <div class="timestamps">
+                    <div class="timestamp-label">最后更新</div>
+                    <div>${lastUpdate}</div>
+                </div>
+            `;
+
+            return card;
+        }
+
+        // 更新团队数据
+        function updateTeam(teamId, teamName, stats, metrics, timestamp, bestQps, bestQpsTime, bestLatency, bestLatencyTime) {
+            teams.set(teamId, { teamName, stats, metrics, timestamp, bestQps, bestQpsTime, bestLatency, bestLatencyTime });
+            
+            // 查找或创建卡片位置
+            let cardElement = document.getElementById(`team-${teamId}`);
+            if (!cardElement) {
+                // 找到第一个空位置
+                const emptyCards = document.querySelectorAll('.team-card.empty');
+                if (emptyCards.length > 0) {
+                    const emptyCard = emptyCards[0];
+                    cardElement = createTeamCard(teamId, teamName, stats, metrics, timestamp, bestQps, bestQpsTime, bestLatency, bestLatencyTime);
+                    emptyCard.parentNode.replaceChild(cardElement, emptyCard);
+                }
+            } else {
+                // 更新现有卡片
+                const newCard = createTeamCard(teamId, teamName, stats, metrics, timestamp, bestQps, bestQpsTime, bestLatency, bestLatencyTime);
+                cardElement.parentNode.replaceChild(newCard, cardElement);
+            }
+        }
+
+        // 移除团队
+        function removeTeam(teamId) {
+            teams.delete(teamId);
+            const cardElement = document.getElementById(`team-${teamId}`);
+            if (cardElement) {
+                const emptyCard = document.createElement('div');
+                emptyCard.className = 'team-card empty';
+                emptyCard.innerHTML = `<div>等待小组连接...</div>`;
+                cardElement.parentNode.replaceChild(emptyCard, cardElement);
+            }
+        }
+
+        // WebSocket事件处理
+        socket.on('connect', function() {
+            console.log('Connected to server');
+        });
+
+        socket.on('stats_update', function(data) {
+            console.log('Received stats update:', data);
+            updateTeam(
+                data.team_id, 
+                data.team_name, 
+                data.stats, 
+                data.metrics, 
+                data.timestamp,
+                data.best_qps,
+                data.best_qps_time,
+                data.best_latency,
+                data.best_latency_time
+            );
+        });
+
+        socket.on('disconnect', function() {
+            console.log('Disconnected from server');
+        });
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            initDashboard();
+            
+            // 加载现有团队数据
+            fetch('/api/teams')
+                .then(response => response.json())
+                .then(teamsList => {
+                    teamsList.forEach(team => {
+                        fetch(`/api/teams/${team.team_id}`)
+                            .then(response => response.json())
+                            .then(data => {
+                                updateTeam(
+                                    data.team_id, 
+                                    data.team_name, 
+                                    data.stats, 
+                                    data.metrics, 
+                                    data.last_update,
+                                    data.best_qps,
+                                    data.best_qps_time,
+                                    data.best_latency,
+                                    data.best_latency_time
+                                );
+                            });
+                    });
+                })
+                .catch(error => {
+                    console.error('Error loading teams:', error);
+                });
+        });
+    </script>
+</body>
+</html> 
