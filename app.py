@@ -113,7 +113,7 @@ def calculate_p99_latency(buckets: List[int]) -> float:
     return bucket_boundaries[-2]  # 返回最后一个有限边界
 
 def calculate_data_loss_rate(stats: Dict) -> float:
-    """计算数据丢失率"""
+    """计算失败率"""
     total_sent = stats.get('totalSent', 0)
     total_ops = stats.get('totalOps', 0)
     pending = stats.get('pending', 0)
@@ -168,34 +168,101 @@ def calculate_overall_metrics(stats: Dict) -> Dict:
     }
 
 def save_team_data(team_id: str, team_name: str, stats: Dict):
-    """保存团队数据到本地文件"""
-    data_dir = "data"
-    if not os.path.exists(data_dir):
-        os.makedirs(data_dir)
+    """保存团队数据到本地文件 - 每次上报都单独存储"""
+    # 创建团队目录
+    team_dir = f"data/{team_id}"
+    if not os.path.exists(team_dir):
+        os.makedirs(team_dir)
     
-    filename = f"{data_dir}/{team_id}.json"
+    # 使用时间戳作为文件名
+    timestamp = datetime.now()
+    timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S_%f")[:-3]  # 精确到毫秒
+    filename = f"{team_dir}/{timestamp_str}.json"
+    
     data = {
         "team_id": team_id,
         "team_name": team_name,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": timestamp.isoformat(),
         "stats": stats
     }
     
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    
+    # 同时保存最新数据到 latest.json 以便快速访问
+    latest_filename = f"{team_dir}/latest.json"
+    with open(latest_filename, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 def load_team_data(team_id: str) -> Optional[Dict]:
-    """从本地文件加载团队数据"""
-    filename = f"data/{team_id}.json"
+    """从本地文件加载团队最新数据"""
+    filename = f"data/{team_id}/latest.json"
     if os.path.exists(filename):
         with open(filename, 'r', encoding='utf-8') as f:
             return json.load(f)
     return None
 
+def get_team_history_files(team_id: str) -> List[Dict]:
+    """获取团队所有历史数据文件列表"""
+    team_dir = f"data/{team_id}"
+    if not os.path.exists(team_dir):
+        return []
+    
+    history_files = []
+    for filename in os.listdir(team_dir):
+        if filename.endswith('.json') and filename != 'latest.json':
+            file_path = f"{team_dir}/{filename}"
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    history_files.append({
+                        'filename': filename,
+                        'timestamp': data.get('timestamp'),
+                        'file_path': file_path
+                    })
+            except Exception as e:
+                print(f"Error reading {file_path}: {e}")
+                continue
+    
+    # 按时间戳排序（最新的在前）
+    history_files.sort(key=lambda x: x['timestamp'], reverse=True)
+    return history_files
+
+def load_team_history_data(team_id: str, limit: int = 10) -> List[Dict]:
+    """加载团队历史数据（限制数量）"""
+    history_files = get_team_history_files(team_id)
+    history_data = []
+    
+    for file_info in history_files[:limit]:
+        try:
+            with open(file_info['file_path'], 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                history_data.append(data)
+        except Exception as e:
+            print(f"Error loading {file_info['file_path']}: {e}")
+            continue
+    
+    return history_data
+
 @app.route('/')
 def dashboard():
     """Web看板页面"""
     return render_template('dashboard.html')
+
+@app.route('/team/<team_id>/history')
+def team_history_page(team_id):
+    """团队历史数据查看页面"""
+    # 获取团队基本信息
+    with data_lock:
+        if team_id in teams_data:
+            team_data = teams_data[team_id]
+            team_name = team_data.team_name
+        else:
+            # 尝试从文件加载
+            file_data = load_team_data(team_id)
+            team_name = file_data.get('team_name', f'Team-{team_id}') if file_data else f'Team-{team_id}'
+    
+    return render_template('team_history.html', team_id=team_id, team_name=team_name)
 
 @app.route('/api/stats/report', methods=['POST'])
 def submit_stats():
@@ -316,11 +383,78 @@ def get_team_stats(team_id):
 @app.route('/api/teams/<team_id>/history', methods=['GET'])
 def get_team_history(team_id):
     """获取团队历史数据"""
-    data = load_team_data(team_id)
-    if data:
-        return jsonify(data)
-    else:
-        return jsonify({"error": "Team history not found"}), 404
+    try:
+        # 获取查询参数
+        limit = int(request.args.get('limit', 10))  # 默认返回10条
+        offset = int(request.args.get('offset', 0))  # 默认从0开始
+        
+        # 获取历史文件列表
+        history_files = get_team_history_files(team_id)
+        
+        if not history_files:
+            return jsonify({
+                "message": "No history found for this team",
+                "team_id": team_id,
+                "history": [],
+                "total": 0
+            }), 200
+        
+        # 应用分页
+        total = len(history_files)
+        paginated_files = history_files[offset:offset + limit]
+        
+        # 加载数据
+        history_data = []
+        for file_info in paginated_files:
+            try:
+                with open(file_info['file_path'], 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    # 添加计算的性能指标
+                    metrics = calculate_overall_metrics(data.get('stats', {}))
+                    data['metrics'] = metrics
+                    history_data.append(data)
+            except Exception as e:
+                print(f"Error loading {file_info['file_path']}: {e}")
+                continue
+        
+        return jsonify({
+            "team_id": team_id,
+            "history": history_data,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "has_more": offset + limit < total
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/api/teams/<team_id>/history/summary', methods=['GET'])
+def get_team_history_summary(team_id):
+    """获取团队历史数据摘要（文件数量、时间范围等）"""
+    try:
+        history_files = get_team_history_files(team_id)
+        
+        if not history_files:
+            return jsonify({
+                "team_id": team_id,
+                "total_reports": 0,
+                "first_report": None,
+                "last_report": None,
+                "data_directory": f"data/{team_id}"
+            })
+        
+        return jsonify({
+            "team_id": team_id,
+            "total_reports": len(history_files),
+            "first_report": history_files[-1]['timestamp'] if history_files else None,
+            "last_report": history_files[0]['timestamp'] if history_files else None,
+            "data_directory": f"data/{team_id}",
+            "recent_files": [f['filename'] for f in history_files[:5]]  # 最近5个文件
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 @socketio.on('connect')
 def handle_connect():
@@ -357,9 +491,9 @@ def cleanup_inactive_teams():
                 del teams_data[team_id]
 
 if __name__ == '__main__':
-    # 启动清理线程
-    cleanup_thread = threading.Thread(target=cleanup_inactive_teams, daemon=True)
-    cleanup_thread.start()
+    # # 启动清理线程
+    # cleanup_thread = threading.Thread(target=cleanup_inactive_teams, daemon=True)
+    # cleanup_thread.start()
     
     print("🚀 Starting BenchBoard server on port 8080...")
     

@@ -40,7 +40,7 @@ def dashboard():
     <body>
         <div class="header">
             <h1>🚀 BenchBoard 性能监控看板</h1>
-            <p>实时监控各小组QPS、延迟、数据丢失率等关键指标</p>
+                            <p>实时监控各小组QPS、延迟、失败率等关键指标</p>
         </div>
         <div class="teams" id="teams">
             <div class="team-card">
@@ -81,7 +81,7 @@ def dashboard():
                                     </div>
                                     <div class="metric loss">
                                         <div class="metric-value">${team.data_loss_rate || '0'}%</div>
-                                        <div class="metric-label">数据丢失率</div>
+                                        <div class="metric-label">失败率</div>
                                     </div>
                                 </div>
                                 <div style="margin-top: 10px; font-size: 0.8em; color: #666;">
@@ -144,7 +144,7 @@ def submit_stats():
         sensor_buckets = latency_analysis.get('sensorData', {}).get('buckets', [])
         p99_latency = calculate_p99(sensor_buckets)
         
-        # 计算数据丢失率
+        # 计算失败率
         total_sent = data.get('totalSent', 0)
         total_ops = data.get('totalOps', 0)
         pending = data.get('pending', 0)

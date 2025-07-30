@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ team_name }} - 历史数据</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .header h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .back-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            transition: background 0.3s;
+        }
+
+        .back-btn:hover {
+            background: #2980b9;
+        }
+
+        .stats-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .summary-card {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+        }
+
+        .summary-card h3 {
+            color: #7f8c8d;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .summary-card .value {
+            color: #2c3e50;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .controls {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .controls label {
+            color: #2c3e50;
+            font-weight: 500;
+        }
+
+        .controls select, .controls input {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .controls button {
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+
+        .controls button:hover {
+            background: #219a52;
+        }
+
+        .data-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        .data-table th {
+            background: #f8f9fa;
+            color: #2c3e50;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+
+        .data-table tr:hover {
+            background: #f8f9fa;
+        }
+
+        .metric-value {
+            font-weight: 500;
+        }
+
+        .metric-good {
+            color: #27ae60;
+        }
+
+        .metric-warning {
+            color: #f39c12;
+        }
+
+        .metric-error {
+            color: #e74c3c;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .pagination button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+
+        .pagination button:hover {
+            background: #2980b9;
+        }
+
+        .pagination button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        .pagination span {
+            color: #2c3e50;
+            font-weight: 500;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+        }
+
+        .error {
+            text-align: center;
+            padding: 40px;
+            color: #e74c3c;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+        }
+
+        .export-btn {
+            background: #9b59b6;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+
+        .export-btn:hover {
+            background: #8e44ad;
+        }
+
+        @media (max-width: 768px) {
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .data-table {
+                font-size: 12px;
+            }
+
+            .data-table th,
+            .data-table td {
+                padding: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                <a href="/" class="back-btn">← 返回看板</a>
+                {{ team_name }} - 历史数据
+            </h1>
+            
+            <div class="stats-summary" id="summary">
+                <div class="summary-card">
+                    <h3>总报告数</h3>
+                    <div class="value" id="totalReports">-</div>
+                </div>
+                <div class="summary-card">
+                    <h3>最早报告</h3>
+                    <div class="value" id="firstReport">-</div>
+                </div>
+                <div class="summary-card">
+                    <h3>最新报告</h3>
+                    <div class="value" id="lastReport">-</div>
+                </div>
+                <div class="summary-card">
+                    <h3>平均QPS</h3>
+                    <div class="value" id="avgQPS">-</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <label for="pageSize">每页显示:</label>
+            <select id="pageSize">
+                <option value="10">10条</option>
+                <option value="25" selected>25条</option>
+                <option value="50">50条</option>
+                <option value="100">100条</option>
+            </select>
+
+            <label for="sortBy">排序方式:</label>
+            <select id="sortBy">
+                <option value="newest">最新优先</option>
+                <option value="oldest">最早优先</option>
+                <option value="qps">QPS排序</option>
+                <option value="latency">延迟排序</option>
+            </select>
+
+            <button onclick="refreshData()">刷新数据</button>
+            <button class="export-btn" onclick="exportData()">导出CSV</button>
+        </div>
+
+        <div class="data-container">
+            <div id="loading" class="loading">正在加载数据...</div>
+            <div id="error" class="error" style="display: none;">加载数据失败</div>
+            <div id="noData" class="no-data" style="display: none;">暂无历史数据</div>
+            
+            <div id="dataContent" style="display: none;">
+                <table class="data-table" id="dataTable">
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>QPS</th>
+                            <th>平均延迟</th>
+                            <th>P99延迟</th>
+                            <th>高优先级延迟</th>
+                            <th>失败率</th>
+                            <th>错误率</th>
+                            <th>总请求数</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dataTableBody">
+                    </tbody>
+                </table>
+
+                <div class="pagination">
+                    <button id="prevBtn" onclick="previousPage()" disabled>上一页</button>
+                    <span id="pageInfo">第 1 页 / 共 1 页</span>
+                    <button id="nextBtn" onclick="nextPage()" disabled>下一页</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const teamId = '{{ team_id }}';
+        let currentPage = 0;
+        let pageSize = 25;
+        let totalPages = 1;
+        let allData = [];
+
+        // 初始化页面
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSummary();
+            loadData();
+        });
+
+        // 加载摘要信息
+        async function loadSummary() {
+            try {
+                const response = await fetch(`/api/teams/${teamId}/history/summary`);
+                const data = await response.json();
+                
+                document.getElementById('totalReports').textContent = data.total_reports || 0;
+                document.getElementById('firstReport').textContent = formatDateTime(data.first_report);
+                document.getElementById('lastReport').textContent = formatDateTime(data.last_report);
+                
+                // 计算平均QPS（如果有历史数据）
+                if (data.total_reports > 0) {
+                    calculateAverageMetrics();
+                }
+            } catch (error) {
+                console.error('Failed to load summary:', error);
+            }
+        }
+
+        // 加载历史数据
+        async function loadData() {
+            try {
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('error').style.display = 'none';
+                document.getElementById('noData').style.display = 'none';
+                document.getElementById('dataContent').style.display = 'none';
+
+                const limit = parseInt(document.getElementById('pageSize').value);
+                const offset = currentPage * limit;
+                
+                const response = await fetch(`/api/teams/${teamId}/history?limit=${limit}&offset=${offset}`);
+                const data = await response.json();
+
+                if (data.history && data.history.length > 0) {
+                    allData = data.history;
+                    totalPages = Math.ceil(data.total / limit);
+                    renderTable(data.history);
+                    updatePagination(data);
+                    document.getElementById('dataContent').style.display = 'block';
+                } else {
+                    document.getElementById('noData').style.display = 'block';
+                }
+
+                document.getElementById('loading').style.display = 'none';
+            } catch (error) {
+                console.error('Failed to load data:', error);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+            }
+        }
+
+        // 渲染数据表格
+        function renderTable(data) {
+            const tbody = document.getElementById('dataTableBody');
+            tbody.innerHTML = '';
+
+            data.forEach(record => {
+                const row = document.createElement('tr');
+                const metrics = record.metrics || {};
+                const stats = record.stats || {};
+                
+                row.innerHTML = `
+                    <td>${formatDateTime(record.timestamp)}</td>
+                    <td class="metric-value ${getQPSClass(stats.performanceMetrics?.avgCompletedQPS)}">${(stats.performanceMetrics?.avgCompletedQPS || 0).toFixed(1)}</td>
+                    <td class="metric-value ${getLatencyClass(metrics.avg_latency)}">${(metrics.avg_latency || 0).toFixed(1)}ms</td>
+                    <td class="metric-value ${getLatencyClass(metrics.p99_latency)}">${(metrics.p99_latency || 0).toFixed(1)}ms</td>
+                    <td class="metric-value ${getLatencyClass(metrics.high_priority_latency)}">${(metrics.high_priority_latency || 0).toFixed(1)}ms</td>
+                    <td class="metric-value ${getErrorClass(metrics.data_loss_rate)}">${(metrics.data_loss_rate || 0).toFixed(2)}%</td>
+                    <td class="metric-value ${getErrorClass(stats.performanceMetrics?.errorRate)}">${(stats.performanceMetrics?.errorRate || 0).toFixed(2)}%</td>
+                    <td class="metric-value">${stats.totalSent || 0}</td>
+                    <td><button onclick="viewDetails('${record.timestamp}')" style="background:#3498db;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;">详情</button></td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // 更新分页信息
+        function updatePagination(data) {
+            document.getElementById('pageInfo').textContent = `第 ${currentPage + 1} 页 / 共 ${totalPages} 页 (共 ${data.total} 条记录)`;
+            document.getElementById('prevBtn').disabled = currentPage === 0;
+            document.getElementById('nextBtn').disabled = !data.has_more;
+        }
+
+        // 分页控制
+        function previousPage() {
+            if (currentPage > 0) {
+                currentPage--;
+                loadData();
+            }
+        }
+
+        function nextPage() {
+            currentPage++;
+            loadData();
+        }
+
+        // 刷新数据
+        function refreshData() {
+            currentPage = 0;
+            loadSummary();
+            loadData();
+        }
+
+        // 页面大小改变
+        document.getElementById('pageSize').addEventListener('change', function() {
+            currentPage = 0;
+            loadData();
+        });
+
+        // 排序改变
+        document.getElementById('sortBy').addEventListener('change', function() {
+            currentPage = 0;
+            loadData();
+        });
+
+        // 工具函数
+        function formatDateTime(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            return date.toLocaleString('zh-CN');
+        }
+
+        function getQPSClass(qps) {
+            if (!qps) return '';
+            return qps > 10 ? 'metric-good' : qps > 5 ? 'metric-warning' : 'metric-error';
+        }
+
+        function getLatencyClass(latency) {
+            if (!latency) return '';
+            return latency < 50 ? 'metric-good' : latency < 100 ? 'metric-warning' : 'metric-error';
+        }
+
+        function getErrorClass(rate) {
+            if (!rate) return 'metric-good';
+            return rate < 1 ? 'metric-good' : rate < 5 ? 'metric-warning' : 'metric-error';
+        }
+
+        function viewDetails(timestamp) {
+            alert(`查看 ${formatDateTime(timestamp)} 的详细数据\n\n此功能可进一步扩展为弹窗显示完整的统计信息。`);
+        }
+
+        function exportData() {
+            // 导出CSV功能
+            if (allData.length === 0) {
+                alert('没有数据可导出');
+                return;
+            }
+
+            const csvContent = generateCSV(allData);
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `${teamId}_history_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function generateCSV(data) {
+            const headers = ['时间', 'QPS', '平均延迟(ms)', 'P99延迟(ms)', '高优先级延迟(ms)', '失败率(%)', '错误率(%)', '总请求数'];
+            let csv = headers.join(',') + '\n';
+
+            data.forEach(record => {
+                const metrics = record.metrics || {};
+                const stats = record.stats || {};
+                const row = [
+                    formatDateTime(record.timestamp),
+                    (stats.performanceMetrics?.avgCompletedQPS || 0).toFixed(1),
+                    (metrics.avg_latency || 0).toFixed(1),
+                    (metrics.p99_latency || 0).toFixed(1),
+                    (metrics.high_priority_latency || 0).toFixed(1),
+                    (metrics.data_loss_rate || 0).toFixed(2),
+                    (stats.performanceMetrics?.errorRate || 0).toFixed(2),
+                    stats.totalSent || 0
+                ];
+                csv += row.join(',') + '\n';
+            });
+
+            return csv;
+        }
+
+        async function calculateAverageMetrics() {
+            try {
+                const response = await fetch(`/api/teams/${teamId}/history?limit=100`);
+                const data = await response.json();
+                
+                if (data.history && data.history.length > 0) {
+                    const avgQPS = data.history.reduce((sum, record) => {
+                        return sum + (record.stats?.performanceMetrics?.avgCompletedQPS || 0);
+                    }, 0) / data.history.length;
+                    
+                    document.getElementById('avgQPS').textContent = avgQPS.toFixed(1);
+                }
+            } catch (error) {
+                console.error('Failed to calculate average metrics:', error);
+            }
+        }
+    </script>
+</body>
+</html> 

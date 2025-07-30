@@ -46,16 +46,15 @@
         }
 
         .team-card {
-            background: rgba(255, 255, 255, 0.95);
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
             border-radius: 15px;
             padding: 20px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            transition: all 0.3s ease;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
             position: relative;
-            overflow: hidden;
-            min-height: 350px;
+            cursor: pointer;
         }
 
         .team-card:hover {
@@ -251,6 +250,33 @@
             gap: 8px;
         }
 
+        .card-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.1);
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none; /* 确保不会影响卡片本身的点击 */
+        }
+
+        .team-card:hover .card-overlay {
+            opacity: 1;
+        }
+
+        .click-hint {
+            color: white;
+            font-size: 1.2rem;
+            text-align: center;
+            opacity: 0.8;
+        }
+
         @media (max-width: 1400px) {
             .dashboard-grid {
                 grid-template-columns: repeat(2, 1fr);
@@ -277,7 +303,7 @@
 <body>
     <div class="header">
         <h1>🚀 BenchBoard 性能监控看板</h1>
-        <p>实时监控各小组QPS、延迟、数据丢失率等关键指标</p>
+                        <p>实时监控各小组QPS、延迟、失败率等关键指标</p>
     </div>
 
     <div class="dashboard-grid" id="dashboard">
@@ -370,7 +396,7 @@
                     </div>
                     <div class="metric-card loss">
                         <div class="metric-value">${metrics.data_loss_rate.toFixed(2)}%</div>
-                        <div class="metric-label">数据丢失率</div>
+                        <div class="metric-label">失败率</div>
                     </div>
                 </div>
 
@@ -433,7 +459,28 @@
                     <div class="timestamp-label">最后更新</div>
                     <div>${lastUpdate}</div>
                 </div>
+                
+                <div class="card-overlay">
+                    <div class="click-hint">📊 点击查看历史数据</div>
+                </div>
             `;
+
+            // 添加点击事件，在新标签页打开历史数据页面
+            card.addEventListener('click', function() {
+                window.open(`/team/${teamId}/history`, '_blank');
+            });
+
+            // 添加鼠标悬停效果
+            card.addEventListener('mouseenter', function() {
+                card.style.transform = 'translateY(-5px)';
+                card.style.boxShadow = '0 12px 30px rgba(0,0,0,0.15)';
+                card.style.cursor = 'pointer';
+            });
+
+            card.addEventListener('mouseleave', function() {
+                card.style.transform = 'translateY(0)';
+                card.style.boxShadow = '0 8px 24px rgba(0,0,0,0.1)';
+            });
 
             return card;
         }
