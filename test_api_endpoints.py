@@ -87,6 +87,9 @@ class APITester:
             "totalOps": 980,
             "totalErrors": 20,
             "totalSaveDelayErrors": 5,
+            "totalAvgLatency": 45.2,
+            "highPriorityAvgDelayLatency": 32.1,
+            "totalVerifyErrorRate": 1.8,
             "pending": 15,
             "operations": {
                 "sensorData": {"operations": 500, "errors": 10},

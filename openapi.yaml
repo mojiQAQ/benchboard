@@ -24,6 +24,14 @@ components:
           type: integer
           format: int64
           description: 总因为发现落盘时间超时而产生的错误数
+        totalAvgLatency:
+          type: number
+          format: float
+          description: 总平均延迟（ms）
+        highPriorityAvgDelayLatency:
+          type: number
+          format: float
+          description: 高优先级平均延迟（ms）
         pending:
           type: integer
           format: int64

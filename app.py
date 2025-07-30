@@ -81,6 +81,9 @@ class StatsReport(BaseModel):
     totalOps: int = Field(..., description="完成请求数")
     totalErrors: int = Field(..., description="总错误数")
     totalSaveDelayErrors: int = Field(..., description="总因为发现落盘时间超时而产生的错误数")
+    totalAvgLatency: Optional[float] = Field(None, description="总平均延迟（ms）")
+    highPriorityAvgDelayLatency: Optional[float] = Field(None, description="高优先级平均延迟（ms）")
+    totalVerifyErrorRate: Optional[float] = Field(None, description="总验证错误率（%）")
     pending: int = Field(..., description="待处理请求数")
     operations: OperationsStats
     highPriorityStats: HighPriorityStats
@@ -127,43 +130,52 @@ def calculate_data_loss_rate(stats: Dict) -> float:
 
 def calculate_overall_metrics(stats: Dict) -> Dict:
     """计算整体性能指标"""
-    latency_analysis = stats.get('latencyAnalysis', {})
+    # 优先使用新的字段
+    avg_latency = stats.get('totalAvgLatency')
+    high_priority_latency = stats.get('highPriorityAvgDelayLatency')
     
-    # 计算总体平均延迟
-    total_latency = 0
-    total_requests = 0
+    # 如果新字段不存在，回退到旧的计算方式
+    if avg_latency is None:
+        latency_analysis = stats.get('latencyAnalysis', {})
+        
+        # 计算总体平均延迟
+        total_latency = 0
+        total_requests = 0
+        
+        for operation_type in ['sensorData', 'sensorRW', 'batchRW', 'query']:
+            if operation_type in latency_analysis:
+                op_data = latency_analysis[operation_type]
+                op_requests = sum(op_data.get('buckets', []))
+                if op_requests > 0:
+                    total_latency += op_data.get('avg', 0) * op_requests
+                    total_requests += op_requests
+        
+        avg_latency = total_latency / total_requests if total_requests > 0 else 0
     
-    for operation_type in ['sensorData', 'sensorRW', 'batchRW', 'query']:
-        if operation_type in latency_analysis:
-            op_data = latency_analysis[operation_type]
-            op_requests = sum(op_data.get('buckets', []))
-            if op_requests > 0:
-                total_latency += op_data.get('avg', 0) * op_requests
-                total_requests += op_requests
-    
-    avg_latency = total_latency / total_requests if total_requests > 0 else 0
+    # 如果高优先级延迟字段不存在，回退到旧的计算方式
+    if high_priority_latency is None:
+        latency_analysis = stats.get('latencyAnalysis', {})
+        total_high_priority_latency = 0
+        total_high_priority_count = 0
+        
+        for operation_type in ['sensorData', 'sensorRW', 'batchRW', 'query']:
+            if operation_type in latency_analysis:
+                op_data = latency_analysis[operation_type]
+                if op_data.get('highPriorityAvg') and op_data.get('highPriorityCount'):
+                    total_high_priority_latency += op_data['highPriorityAvg'] * op_data['highPriorityCount']
+                    total_high_priority_count += op_data['highPriorityCount']
+        
+        high_priority_latency = total_high_priority_latency / total_high_priority_count if total_high_priority_count > 0 else 0
     
     # 计算总体P99延迟（使用sensorData作为主要指标）
+    latency_analysis = stats.get('latencyAnalysis', {})
     sensor_buckets = latency_analysis.get('sensorData', {}).get('buckets', [])
     p99_latency = calculate_p99_latency(sensor_buckets)
-    
-    # 计算高优先级平均延迟
-    high_priority_latency = 0
-    high_priority_count = 0
-    
-    for operation_type in ['sensorData', 'sensorRW', 'batchRW', 'query']:
-        if operation_type in latency_analysis:
-            op_data = latency_analysis[operation_type]
-            if op_data.get('highPriorityAvg') and op_data.get('highPriorityCount'):
-                high_priority_latency += op_data['highPriorityAvg'] * op_data['highPriorityCount']
-                high_priority_count += op_data['highPriorityCount']
-    
-    avg_high_priority_latency = high_priority_latency / high_priority_count if high_priority_count > 0 else 0
     
     return {
         'avg_latency': avg_latency,
         'p99_latency': p99_latency,
-        'high_priority_latency': avg_high_priority_latency,
+        'high_priority_latency': high_priority_latency,
         'data_loss_rate': calculate_data_loss_rate(stats)
     }
 

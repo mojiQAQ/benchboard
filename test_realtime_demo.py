@@ -104,6 +104,9 @@ class RealtimeDemo:
             "totalOps": total_requests - error_count,
             "totalErrors": error_count,
             "totalSaveDelayErrors": random.randint(0, 5),
+            "totalAvgLatency": current_latency,
+            "highPriorityAvgDelayLatency": current_latency * 0.7,
+            "totalVerifyErrorRate": max(0.1, 5.0 - current_qps * 0.15),
             "pending": random.randint(5, 25),
             "operations": {
                 "sensorData": {

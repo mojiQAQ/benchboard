@@ -321,7 +321,7 @@
                             <th>P99延迟</th>
                             <th>高优先级延迟</th>
                             <th>失败率</th>
-                            <th>错误率</th>
+                            <th>验证错误率</th>
                             <th>总请求数</th>
                             <th>操作</th>
                         </tr>
@@ -420,7 +420,7 @@
                     <td class="metric-value ${getLatencyClass(metrics.p99_latency)}">${(metrics.p99_latency || 0).toFixed(1)}ms</td>
                     <td class="metric-value ${getLatencyClass(metrics.high_priority_latency)}">${(metrics.high_priority_latency || 0).toFixed(1)}ms</td>
                     <td class="metric-value ${getErrorClass(metrics.data_loss_rate)}">${(metrics.data_loss_rate || 0).toFixed(2)}%</td>
-                    <td class="metric-value ${getErrorClass(stats.performanceMetrics?.errorRate)}">${(stats.performanceMetrics?.errorRate || 0).toFixed(2)}%</td>
+                    <td class="metric-value ${getErrorClass(stats.totalVerifyErrorRate)}">${(stats.totalVerifyErrorRate || 0).toFixed(2)}%</td>
                     <td class="metric-value">${stats.totalSent || 0}</td>
                     <td><button onclick="viewDetails('${record.timestamp}')" style="background:#3498db;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;">详情</button></td>
                 `;
@@ -512,7 +512,7 @@
         }
 
         function generateCSV(data) {
-            const headers = ['时间', 'QPS', '平均延迟(ms)', 'P99延迟(ms)', '高优先级延迟(ms)', '失败率(%)', '错误率(%)', '总请求数'];
+            const headers = ['时间', 'QPS', '平均延迟(ms)', 'P99延迟(ms)', '高优先级延迟(ms)', '失败率(%)', '验证错误率(%)', '总请求数'];
             let csv = headers.join(',') + '\n';
 
             data.forEach(record => {
@@ -525,7 +525,7 @@
                     (metrics.p99_latency || 0).toFixed(1),
                     (metrics.high_priority_latency || 0).toFixed(1),
                     (metrics.data_loss_rate || 0).toFixed(2),
-                    (stats.performanceMetrics?.errorRate || 0).toFixed(2),
+                    (stats.totalVerifyErrorRate || 0).toFixed(2),
                     stats.totalSent || 0
                 ];
                 csv += row.join(',') + '\n';

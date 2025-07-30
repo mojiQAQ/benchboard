@@ -85,6 +85,9 @@ def generate_test_data(team_num: int = 1) -> Dict:
         "totalOps": 980 + team_num * 450,
         "totalErrors": 20 - team_num * 5,
         "totalSaveDelayErrors": 5,
+        "totalAvgLatency": base_latency,
+        "highPriorityAvgDelayLatency": base_latency * 0.7,
+        "totalVerifyErrorRate": max(0.1, 2.5 - team_num * 0.3),
         "pending": 15 + team_num,
         "operations": {
             "sensorData": {"operations": 500 + team_num * 100, "errors": 10 - team_num},

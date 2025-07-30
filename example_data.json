@@ -4,6 +4,9 @@
   "totalOps": 4850,
   "totalErrors": 150,
   "totalSaveDelayErrors": 45,
+  "totalAvgLatency": 45.2,
+  "highPriorityAvgDelayLatency": 32.1,
+  "totalVerifyErrorRate": 1.8,
   "pending": 25,
   "operations": {
     "sensorData": {

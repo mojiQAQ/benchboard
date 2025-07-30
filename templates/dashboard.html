@@ -417,11 +417,11 @@
                 <div class="detailed-stats">
                     <div class="stat-item">
                         <div class="stat-label">总运行时间</div>
-                        <div class="stat-value">${(stats.totalElapsed / 60).toFixed(1)}min</div>
+                        <div class="stat-value">${stats.totalElapsed.toFixed(1)}s</div>
                     </div>
                     <div class="stat-item">
-                        <div class="stat-label">错误率</div>
-                        <div class="stat-value error">${stats.performanceMetrics.errorRate.toFixed(2)}%</div>
+                        <div class="stat-label">验证错误率</div>
+                        <div class="stat-value error">${(stats.totalVerifyErrorRate || 0).toFixed(2)}%</div>
                     </div>
                     <div class="stat-item">
                         <div class="stat-label">完成请求</div>
