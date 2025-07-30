@@ -193,5 +193,5 @@ def get_teams():
     return jsonify(list(teams_data.values()))
 
 if __name__ == '__main__':
-    print("🚀 Starting Simple BenchBoard server on port 8082...")
-    app.run(host='0.0.0.0', port=8082, debug=True) 
+    print("🚀 Starting Simple BenchBoard server on port 8080...")
+    app.run(host='0.0.0.0', port=8080, debug=True) 

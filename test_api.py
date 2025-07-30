@@ -15,7 +15,7 @@ with open('example_data.json', 'r', encoding='utf-8') as f:
 def test_server_health():
     """测试服务器健康状态"""
     try:
-        response = requests.get('http://localhost:8081/api/teams', timeout=5)
+        response = requests.get('http://localhost:8080/api/teams', timeout=5)
         if response.status_code == 200:
             print("✅ 服务器运行正常")
             return True
@@ -40,7 +40,7 @@ def test_stats_submission():
     
     try:
         response = requests.post(
-            'http://localhost:8081/api/stats/report',
+            'http://localhost:8080/api/stats/report',
             headers=headers,
             data=json.dumps(example_data, ensure_ascii=False).encode('utf-8'),
             timeout=10
@@ -62,7 +62,7 @@ def test_team_data_retrieval():
     """测试团队数据获取"""
     try:
         # 获取团队列表
-        response = requests.get('http://localhost:8081/api/teams', timeout=5)
+        response = requests.get('http://localhost:8080/api/teams', timeout=5)
         if response.status_code == 200:
             teams = response.json()
             print(f"✅ 获取团队列表成功: {len(teams)} 个团队")
@@ -70,7 +70,7 @@ def test_team_data_retrieval():
             # 获取特定团队数据
             if teams:
                 team_id = teams[0]['team_id']
-                response = requests.get(f'http://localhost:8081/api/teams/{team_id}', timeout=5)
+                response = requests.get(f'http://localhost:8080/api/teams/{team_id}', timeout=5)
                 if response.status_code == 200:
                     team_data = response.json()
                     print(f"✅ 获取团队数据成功: {team_data['team_name']}")
@@ -92,7 +92,7 @@ def test_team_data_retrieval():
 def test_web_dashboard():
     """测试Web看板访问"""
     try:
-        response = requests.get('http://localhost:8081/', timeout=5)
+        response = requests.get('http://localhost:8080/', timeout=5)
         if response.status_code == 200:
             print("✅ Web看板访问正常")
             return True

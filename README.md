@@ -28,25 +28,43 @@
 
 ## 快速开始
 
-### 1. 安装依赖
+### 1. 创建虚拟环境（推荐）
+
+```bash
+# 创建虚拟环境
+python3 -m venv venv
+
+# 激活虚拟环境
+# macOS/Linux:
+source venv/bin/activate
+
+# Windows:
+# venv\Scripts\activate
+```
+
+### 2. 安装依赖
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. 启动服务器
+### 3. 启动服务器
 
 ```bash
+# 使用完整版服务器（支持WebSocket实时更新）
 python app.py
+
+# 或使用简化版服务器（更稳定）
+python simple_app.py
 ```
 
-服务器将在 `http://localhost:8080` 启动
+服务器将在 `http://localhost:8080` 启动（简化版使用8080端口）
 
-### 3. 访问Web看板
+### 4. 访问Web看板
 
-打开浏览器访问 `http://localhost:8080` 即可看到实时看板
+打开浏览器访问相应端口即可看到实时看板
 
-### 4. 测试数据上报
+### 5. 测试数据上报
 
 使用测试客户端模拟压测工具上报数据：
 
@@ -59,6 +77,15 @@ python test_client.py --team-id team2 --team-name "第二小组" --interval 25
 
 # 启动第三个测试客户端（新终端）
 python test_client.py --team-id team3 --team-name "第三小组" --interval 35
+
+# 或者使用快速演示脚本
+python quick_test.py
+```
+
+### 6. 退出虚拟环境
+
+```bash
+deactivate
 ```
 
 ## API接口
@@ -137,22 +164,39 @@ X-Team-Name: <团队名称>
 
 ### 服务器配置
 
-- **端口**: 8080
+- **完整版服务器** (`app.py`):
+  - 端口: 8080
+  - 支持WebSocket实时更新
+  - 支持最佳成绩记录
+  - 完整的性能指标计算
+
+- **简化版服务器** (`simple_app.py`):
+  - 端口: 8080
+  - 更稳定，适合演示
+  - 基本的性能指标显示
+  - 无WebSocket依赖
+
 - **主机**: 0.0.0.0（允许外部访问）
-- **WebSocket**: 支持实时通信
 - **CORS**: 允许跨域请求
 
 ## 文件结构
 
 ```
 benchboard/
-├── app.py                 # 主应用文件
+├── app.py                 # 主应用文件（完整版，支持WebSocket）
+├── simple_app.py          # 简化版服务器（更稳定）
 ├── requirements.txt       # Python依赖
 ├── test_client.py        # 测试客户端
+├── test_api.py           # API测试脚本
+├── quick_test.py         # 快速演示脚本
 ├── openapi.yaml          # API规范文档
+├── example_data.json     # 示例数据格式
 ├── README.md             # 项目说明
+├── QUICK_START.md        # 快速开始指南
+├── start_demo.sh         # 一键演示脚本
 ├── templates/
-│   └── dashboard.html    # Web看板页面
+│   └── dashboard.html    # Web看板页面（完整版）
+├── venv/                 # 虚拟环境目录（需手动创建）
 └── data/                 # 数据存储目录（自动创建）
     ├── team1.json
     ├── team2.json
@@ -186,7 +230,21 @@ benchboard/
    kill -9 <PID>
    ```
 
-2. **依赖安装失败**
+2. **虚拟环境问题**
+   ```bash
+   # 如果虚拟环境创建失败
+   python3 -m pip install --upgrade pip
+   python3 -m venv venv --clear
+   
+   # 确认虚拟环境已激活（命令行前应显示 (venv)）
+   which python  # 应指向 venv 目录
+   
+   # 重新激活虚拟环境
+   source venv/bin/activate  # macOS/Linux
+   # 或 venv\Scripts\activate  # Windows
+   ```
+
+3. **依赖安装失败**
    ```bash
    # 升级pip
    pip install --upgrade pip
@@ -194,10 +252,31 @@ benchboard/
    pip install -r requirements.txt
    ```
 
-3. **WebSocket连接失败**
+4. **中文编码问题**
+   ```bash
+   # 设置环境变量
+   export PYTHONIOENCODING=utf-8
+   export LC_ALL=en_US.UTF-8
+   ```
+
+5. **WebSocket连接失败**（仅完整版服务器）
    - 检查防火墙设置
    - 确认浏览器支持WebSocket
    - 查看浏览器控制台错误信息
+   - 尝试使用简化版服务器：`python simple_app.py`
+
+### 快速验证
+
+```bash
+# 验证Python环境
+python --version
+
+# 验证依赖安装
+python -c "import flask; import requests; print('Dependencies OK')"
+
+# 运行快速测试
+python quick_test.py
+```
 
 ## 贡献指南
 
