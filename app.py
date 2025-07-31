@@ -243,6 +243,129 @@ def load_team_history_data(team_id: str, limit: int = 10) -> List[Dict]:
     
     return history_data
 
+def load_all_teams_on_startup():
+    """启动时从data目录读取所有团队数据"""
+    print("🔄 启动时加载历史数据...")
+    
+    data_dir = "data"
+    if not os.path.exists(data_dir):
+        print("📁 data目录不存在，跳过数据加载")
+        return
+    
+    loaded_teams = 0
+    with data_lock:
+        # 遍历data目录下的所有团队目录
+        for team_dir_name in os.listdir(data_dir):
+            team_dir_path = os.path.join(data_dir, team_dir_name)
+            
+            # 跳过非目录文件
+            if not os.path.isdir(team_dir_path):
+                continue
+                
+            latest_file = os.path.join(team_dir_path, "latest.json")
+            
+            # 如果latest.json存在，加载团队数据
+            if os.path.exists(latest_file):
+                try:
+                    with open(latest_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    
+                    team_id = data.get('team_id', team_dir_name)
+                    team_name = data.get('team_name', f'Team-{team_id}')
+                    timestamp_str = data.get('timestamp')
+                    stats = data.get('stats', {})
+                    
+                    # 解析时间戳
+                    try:
+                        last_update = datetime.fromisoformat(timestamp_str) if timestamp_str else datetime.now()
+                    except:
+                        last_update = datetime.now()
+                    
+                    # 计算最佳记录
+                    best_qps, best_qps_time, best_latency, best_latency_time = calculate_best_records(team_id)
+                    
+                    # 创建TeamData对象
+                    teams_data[team_id] = TeamData(
+                        team_id=team_id,
+                        team_name=team_name,
+                        last_update=last_update,
+                        stats=stats,
+                        is_active=True,  # 启动时都设为活跃
+                        best_qps=best_qps,
+                        best_qps_time=best_qps_time,
+                        best_latency=best_latency,
+                        best_latency_time=best_latency_time
+                    )
+                    
+                    loaded_teams += 1
+                    print(f"✅ 加载团队: {team_name} (ID: {team_id})")
+                    print(f"   最后更新: {last_update.strftime('%Y-%m-%d %H:%M:%S')}")
+                    if best_latency is not None:
+                        print(f"   最佳QPS: {best_qps:.1f} | 最佳延迟: {best_latency:.1f}ms")
+                    else:
+                        print(f"   最佳QPS: {best_qps:.1f} | 最佳延迟: N/A")
+                    
+                except Exception as e:
+                    print(f"❌ 加载团队 {team_dir_name} 失败: {e}")
+                    continue
+    
+    print(f"📊 共加载 {loaded_teams} 个团队的历史数据")
+    return loaded_teams
+
+def calculate_best_records(team_id: str) -> tuple:
+    """计算团队的最佳记录（QPS和延迟）"""
+    best_qps = 0.0
+    best_qps_time = None
+    best_latency = float('inf')
+    best_latency_time = None
+    
+    try:
+        # 获取所有历史文件
+        history_files = get_team_history_files(team_id)
+        
+        for file_info in history_files:
+            try:
+                with open(file_info['file_path'], 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                stats = data.get('stats', {})
+                timestamp_str = data.get('timestamp')
+                
+                # 解析时间戳
+                try:
+                    timestamp = datetime.fromisoformat(timestamp_str) if timestamp_str else None
+                except:
+                    timestamp = None
+                
+                # 获取QPS
+                current_qps = stats.get('performanceMetrics', {}).get('avgCompletedQPS', 0)
+                if current_qps > best_qps:
+                    best_qps = current_qps
+                    best_qps_time = timestamp
+                
+                # 计算当前延迟
+                current_metrics = calculate_overall_metrics(stats)
+                current_latency = current_metrics.get('avg_latency', 0)
+                
+                # 更新最佳延迟（更小的更好）
+                if current_latency > 0 and current_latency < best_latency:
+                    best_latency = current_latency
+                    best_latency_time = timestamp
+                    
+            except Exception as e:
+                print(f"⚠️  读取历史文件失败 {file_info['file_path']}: {e}")
+                continue
+                
+    except Exception as e:
+        print(f"⚠️  计算最佳记录失败 (team_id: {team_id}): {e}")
+    
+    # 如果没有找到有效的延迟数据，设为None
+    if best_latency == float('inf'):
+        best_latency = None
+        best_latency_time = None
+    
+    return best_qps, best_qps_time, best_latency, best_latency_time
+
 @app.route('/')
 def dashboard():
     """Web看板页面"""
@@ -495,6 +618,9 @@ if __name__ == '__main__':
     # cleanup_thread.start()
     
     print("🚀 Starting BenchBoard server on port 8080...")
+    
+    # 启动时加载历史数据
+    load_all_teams_on_startup()
     
     # 启动服务器
     socketio.run(app, host='0.0.0.0', port=8080, debug=True, allow_unsafe_werkzeug=True) 
