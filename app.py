@@ -124,9 +124,12 @@ def calculate_p99_latency(buckets: List[int]) -> float:
                 ratio = (p99_threshold - prev_cumulative) / count
                 lower_bound = bucket_boundaries[i-1] if i > 0 else 0
                 upper_bound = bucket_boundaries[i]
+                if upper_bound == float('inf'):
+                    # 如果上边界是无穷大，返回一个合理的最大值
+                    return min(lower_bound + ratio * 5000, 10000)  # 最大10秒
                 return lower_bound + ratio * (upper_bound - lower_bound)
     
-    return bucket_boundaries[-2]  # 返回最后一个有限边界
+    return min(bucket_boundaries[-2], 10000)  # 返回最后一个有限边界，最大10秒
 
 def calculate_data_loss_rate(stats: Dict) -> float:
     """计算失败率"""
@@ -140,6 +143,24 @@ def calculate_data_loss_rate(stats: Dict) -> float:
     # 数据丢失 = 发送数 - 完成数 - 待处理数
     lost = total_sent - total_ops - pending
     return (lost / total_sent) * 100 if lost > 0 else 0.0
+
+def safe_float_value(value, default=0.0, max_value=None):
+    """安全处理浮点数值，避免 Infinity 和 NaN"""
+    import math
+    
+    if value is None:
+        return default
+    
+    if isinstance(value, (int, float)):
+        if math.isnan(value) or math.isinf(value):
+            return default
+        
+        if max_value is not None and value > max_value:
+            return max_value
+            
+        return float(value)
+    
+    return default
 
 def calculate_overall_metrics(stats: Dict) -> Dict:
     """计算整体性能指标"""
@@ -181,11 +202,12 @@ def calculate_overall_metrics(stats: Dict) -> Dict:
     sensor_buckets = latency_analysis.get('sensorData', {}).get('buckets', [])
     p99_latency = calculate_p99_latency(sensor_buckets)
     
+    # 使用安全值处理，避免前端JSON解析问题
     return {
-        'avg_latency': avg_latency,
-        'p99_latency': p99_latency,
-        'high_priority_latency': high_priority_latency,
-        'data_loss_rate': calculate_data_loss_rate(stats)
+        'avg_latency': safe_float_value(avg_latency, 0.0, 60000),  # 最大1分钟
+        'p99_latency': safe_float_value(p99_latency, 0.0, 60000),  # 最大1分钟
+        'high_priority_latency': safe_float_value(high_priority_latency, 0.0, 60000),  # 最大1分钟
+        'data_loss_rate': safe_float_value(calculate_data_loss_rate(stats), 0.0, 100.0)  # 最大100%
     }
 
 def save_team_data(team_id: str, team_name: str, stats: Dict):
@@ -677,9 +699,9 @@ def submit_stats():
             'stats': data,
             'timestamp': datetime.now().isoformat(),
             'metrics': current_metrics,
-            'best_qps': teams_data[team_id].best_qps,
+            'best_qps': safe_float_value(teams_data[team_id].best_qps, 0.0, 1000000),
             'best_qps_time': teams_data[team_id].best_qps_time.isoformat() if teams_data[team_id].best_qps_time else None,
-            'best_latency': teams_data[team_id].best_latency if teams_data[team_id].best_latency != float('inf') else None,
+            'best_latency': safe_float_value(teams_data[team_id].best_latency, None, 60000) if teams_data[team_id].best_latency != float('inf') else None,
             'best_latency_time': teams_data[team_id].best_latency_time.isoformat() if teams_data[team_id].best_latency_time else None
         })
         
@@ -715,9 +737,9 @@ def get_team_stats(team_id):
                 'last_update': team_data.last_update.isoformat(),
                 'stats': team_data.stats,
                 'metrics': metrics,
-                'best_qps': team_data.best_qps,
+                'best_qps': safe_float_value(team_data.best_qps, 0.0, 1000000),  # 最大100万QPS
                 'best_qps_time': team_data.best_qps_time.isoformat() if team_data.best_qps_time else None,
-                'best_latency': team_data.best_latency if team_data.best_latency != float('inf') else None,
+                'best_latency': safe_float_value(team_data.best_latency, None, 60000) if team_data.best_latency != float('inf') else None,
                 'best_latency_time': team_data.best_latency_time.isoformat() if team_data.best_latency_time else None
             })
         else:
@@ -849,9 +871,9 @@ def handle_connect():
                 'stats': team_data.stats,
                 'timestamp': team_data.last_update.isoformat(),
                 'metrics': metrics,
-                'best_qps': team_data.best_qps,
+                'best_qps': safe_float_value(team_data.best_qps, 0.0, 1000000),
                 'best_qps_time': team_data.best_qps_time.isoformat() if team_data.best_qps_time else None,
-                'best_latency': team_data.best_latency if team_data.best_latency != float('inf') else None,
+                'best_latency': safe_float_value(team_data.best_latency, None, 60000) if team_data.best_latency != float('inf') else None,
                 'best_latency_time': team_data.best_latency_time.isoformat() if team_data.best_latency_time else None
             })
 
