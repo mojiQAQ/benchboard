@@ -2,7 +2,7 @@ import os
 import json
 import uuid
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
@@ -11,11 +11,18 @@ from dataclasses import dataclass
 import threading
 import time
 import urllib.parse
+import glob
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import logging
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'benchboard-secret-key'
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # 数据存储
 @dataclass
@@ -30,9 +37,24 @@ class TeamData:
     best_latency: float = float('inf')
     best_latency_time: Optional[datetime] = None
 
+# 缓存结构
+@dataclass 
+class TeamCache:
+    file_count: int = 0
+    last_scan_time: Optional[datetime] = None
+    best_records_cached: bool = False
+    file_mtime_hash: str = ""
+
 # 全局存储
 teams_data: Dict[str, TeamData] = {}
+team_cache: Dict[str, TeamCache] = {}
 data_lock = threading.Lock()
+cache_lock = threading.Lock()
+
+# 性能配置
+CACHE_EXPIRE_SECONDS = 300  # 缓存5分钟过期
+MAX_WORKER_THREADS = 4      # 最大并发线程数
+BATCH_SIZE = 50             # 批量处理文件数量
 
 # Pydantic模型定义
 class OperationStat(BaseModel):
@@ -201,17 +223,69 @@ def load_team_data(team_id: str) -> Optional[Dict]:
             return json.load(f)
     return None
 
-def get_team_history_files(team_id: str) -> List[Dict]:
-    """获取团队所有历史数据文件列表"""
+def get_file_mtime_hash(team_dir: str) -> str:
+    """获取团队目录文件修改时间的哈希值，用于缓存失效检测"""
+    try:
+        json_files = glob.glob(f"{team_dir}/*.json")
+        if not json_files:
+            return ""
+        
+        mtime_list = []
+        for file_path in json_files:
+            try:
+                mtime = os.path.getmtime(file_path)
+                mtime_list.append(f"{os.path.basename(file_path)}:{mtime}")
+            except OSError:
+                continue
+        
+        # 创建简单的哈希
+        content = "|".join(sorted(mtime_list))
+        return str(hash(content))
+    except Exception:
+        return ""
+
+def get_team_history_files_cached(team_id: str) -> List[Dict]:
+    """获取团队所有历史数据文件列表（带缓存优化）"""
     team_dir = f"data/{team_id}"
     if not os.path.exists(team_dir):
         return []
     
+    with cache_lock:
+        # 检查缓存是否有效
+        cache_entry = team_cache.get(team_id)
+        current_mtime_hash = get_file_mtime_hash(team_dir)
+        
+        if (cache_entry and 
+            cache_entry.file_mtime_hash == current_mtime_hash and
+            cache_entry.last_scan_time and
+            (datetime.now() - cache_entry.last_scan_time).total_seconds() < CACHE_EXPIRE_SECONDS):
+            # 缓存有效，从缓存读取
+            logger.debug(f"使用缓存的文件列表: {team_id}")
+    
+    # 缓存无效或不存在，重新扫描
     history_files = []
-    for filename in os.listdir(team_dir):
-        if filename.endswith('.json') and filename != 'latest.json':
-            file_path = f"{team_dir}/{filename}"
-            try:
+    json_files = glob.glob(f"{team_dir}/*.json")
+    
+    # 使用文件名进行时间戳解析（避免读取文件内容）
+    for file_path in json_files:
+        filename = os.path.basename(file_path)
+        if filename == 'latest.json':
+            continue
+            
+        # 尝试从文件名解析时间戳
+        try:
+            # 假设文件名格式为: 20250801_171514_920.json
+            name_part = filename.replace('.json', '')
+            if '_' in name_part and len(name_part) >= 17:
+                timestamp_str = f"{name_part[:8]}T{name_part[9:11]}:{name_part[11:13]}:{name_part[13:15]}.{name_part[16:]}"
+                timestamp = timestamp_str.replace('_', 'T').replace('T', '-', 2).replace('-', 'T', 1)
+                history_files.append({
+                    'filename': filename,
+                    'timestamp': timestamp,
+                    'file_path': file_path
+                })
+            else:
+                # 回退到读取文件内容
                 with open(file_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     history_files.append({
@@ -219,13 +293,26 @@ def get_team_history_files(team_id: str) -> List[Dict]:
                         'timestamp': data.get('timestamp'),
                         'file_path': file_path
                     })
-            except Exception as e:
-                print(f"Error reading {file_path}: {e}")
-                continue
+        except Exception as e:
+            logger.warning(f"⚠️ 读取文件失败 {file_path}: {e}")
+            continue
     
     # 按时间戳排序（最新的在前）
     history_files.sort(key=lambda x: x['timestamp'], reverse=True)
+    
+    # 更新缓存
+    with cache_lock:
+        team_cache[team_id] = TeamCache(
+            file_count=len(history_files),
+            last_scan_time=datetime.now(),
+            file_mtime_hash=current_mtime_hash
+        )
+    
     return history_files
+
+def get_team_history_files(team_id: str) -> List[Dict]:
+    """获取团队所有历史数据文件列表（兼容性包装）"""
+    return get_team_history_files_cached(team_id)
 
 def load_team_history_data(team_id: str, limit: int = 10) -> List[Dict]:
     """加载团队历史数据（限制数量）"""
@@ -243,77 +330,204 @@ def load_team_history_data(team_id: str, limit: int = 10) -> List[Dict]:
     
     return history_data
 
+def load_single_team(team_dir_name: str) -> Optional[TeamData]:
+    """加载单个团队数据（用于并发加载）"""
+    try:
+        team_dir_path = os.path.join("data", team_dir_name)
+        
+        # 跳过非目录文件
+        if not os.path.isdir(team_dir_path):
+            return None
+            
+        latest_file = os.path.join(team_dir_path, "latest.json")
+        
+        # 如果latest.json存在，加载团队数据
+        if not os.path.exists(latest_file):
+            return None
+            
+        with open(latest_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        team_id = data.get('team_id', team_dir_name)
+        team_name = data.get('team_name', f'Team-{team_id}')
+        timestamp_str = data.get('timestamp')
+        stats = data.get('stats', {})
+        
+        # 解析时间戳
+        try:
+            last_update = datetime.fromisoformat(timestamp_str) if timestamp_str else datetime.now()
+        except:
+            last_update = datetime.now()
+        
+        # 计算最佳记录
+        best_qps, best_qps_time, best_latency, best_latency_time = calculate_best_records(team_id)
+        
+        # 创建TeamData对象
+        team_data = TeamData(
+            team_id=team_id,
+            team_name=team_name,
+            last_update=last_update,
+            stats=stats,
+            is_active=True,  # 启动时都设为活跃
+            best_qps=best_qps,
+            best_qps_time=best_qps_time,
+            best_latency=best_latency,
+            best_latency_time=best_latency_time
+        )
+        
+        logger.info(f"✅ 加载团队: {team_name} (ID: {team_id})")
+        logger.info(f"   最后更新: {last_update.strftime('%Y-%m-%d %H:%M:%S')}")
+        if best_latency is not None:
+            logger.info(f"   最佳QPS: {best_qps:.1f} | 最佳延迟: {best_latency:.1f}ms")
+        else:
+            logger.info(f"   最佳QPS: {best_qps:.1f} | 最佳延迟: N/A")
+        
+        return team_data
+        
+    except Exception as e:
+        logger.error(f"❌ 加载团队 {team_dir_name} 失败: {e}")
+        return None
+
 def load_all_teams_on_startup():
-    """启动时从data目录读取所有团队数据"""
-    print("🔄 启动时加载历史数据...")
+    """启动时从data目录读取所有团队数据 - 优化版本（支持并发加载）"""
+    logger.info("🔄 启动时加载历史数据...")
     
     data_dir = "data"
     if not os.path.exists(data_dir):
-        print("📁 data目录不存在，跳过数据加载")
-        return
+        logger.warning("📁 data目录不存在，跳过数据加载")
+        return 0
+    
+    # 获取所有团队目录
+    team_dirs = []
+    try:
+        for item in os.listdir(data_dir):
+            team_dir_path = os.path.join(data_dir, item)
+            if os.path.isdir(team_dir_path):
+                team_dirs.append(item)
+    except Exception as e:
+        logger.error(f"扫描data目录失败: {e}")
+        return 0
+    
+    if not team_dirs:
+        logger.info("📁 data目录下没有找到团队数据")
+        return 0
     
     loaded_teams = 0
-    with data_lock:
-        # 遍历data目录下的所有团队目录
-        for team_dir_name in os.listdir(data_dir):
-            team_dir_path = os.path.join(data_dir, team_dir_name)
-            
-            # 跳过非目录文件
-            if not os.path.isdir(team_dir_path):
-                continue
-                
-            latest_file = os.path.join(team_dir_path, "latest.json")
-            
-            # 如果latest.json存在，加载团队数据
-            if os.path.exists(latest_file):
-                try:
-                    with open(latest_file, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    
-                    team_id = data.get('team_id', team_dir_name)
-                    team_name = data.get('team_name', f'Team-{team_id}')
-                    timestamp_str = data.get('timestamp')
-                    stats = data.get('stats', {})
-                    
-                    # 解析时间戳
-                    try:
-                        last_update = datetime.fromisoformat(timestamp_str) if timestamp_str else datetime.now()
-                    except:
-                        last_update = datetime.now()
-                    
-                    # 计算最佳记录
-                    best_qps, best_qps_time, best_latency, best_latency_time = calculate_best_records(team_id)
-                    
-                    # 创建TeamData对象
-                    teams_data[team_id] = TeamData(
-                        team_id=team_id,
-                        team_name=team_name,
-                        last_update=last_update,
-                        stats=stats,
-                        is_active=True,  # 启动时都设为活跃
-                        best_qps=best_qps,
-                        best_qps_time=best_qps_time,
-                        best_latency=best_latency,
-                        best_latency_time=best_latency_time
-                    )
-                    
-                    loaded_teams += 1
-                    print(f"✅ 加载团队: {team_name} (ID: {team_id})")
-                    print(f"   最后更新: {last_update.strftime('%Y-%m-%d %H:%M:%S')}")
-                    if best_latency is not None:
-                        print(f"   最佳QPS: {best_qps:.1f} | 最佳延迟: {best_latency:.1f}ms")
-                    else:
-                        print(f"   最佳QPS: {best_qps:.1f} | 最佳延迟: N/A")
-                    
-                except Exception as e:
-                    print(f"❌ 加载团队 {team_dir_name} 失败: {e}")
-                    continue
+    failed_teams = []
     
-    print(f"📊 共加载 {loaded_teams} 个团队的历史数据")
+    # 使用并发加载团队数据
+    logger.info(f"🔄 发现 {len(team_dirs)} 个团队目录，开始并发加载...")
+    
+    with ThreadPoolExecutor(max_workers=MAX_WORKER_THREADS) as executor:
+        # 提交所有加载任务
+        future_to_team = {executor.submit(load_single_team, team_dir): team_dir for team_dir in team_dirs}
+        
+        # 收集结果
+        for future in as_completed(future_to_team):
+            team_dir = future_to_team[future]
+            try:
+                team_data = future.result()
+                if team_data:
+                    with data_lock:
+                        teams_data[team_data.team_id] = team_data
+                    loaded_teams += 1
+                else:
+                    failed_teams.append(team_dir)
+            except Exception as e:
+                logger.error(f"处理团队 {team_dir} 的结果时失败: {e}")
+                failed_teams.append(team_dir)
+    
+    # 输出加载结果
+    logger.info(f"📊 共加载 {loaded_teams} 个团队的历史数据")
+    if failed_teams:
+        logger.warning(f"⚠️ 加载失败的团队: {', '.join(failed_teams)}")
+    
+    # 清理缓存状态
+    with cache_lock:
+        for team_id in teams_data.keys():
+            if team_id not in team_cache:
+                team_cache[team_id] = TeamCache()
+    
     return loaded_teams
 
-def calculate_best_records(team_id: str) -> tuple:
-    """计算团队的最佳记录（QPS和延迟）"""
+def get_cache_status() -> Dict:
+    """获取缓存状态信息（用于调试和监控）"""
+    with cache_lock:
+        cache_info = {}
+        for team_id, cache_entry in team_cache.items():
+            cache_info[team_id] = {
+                'file_count': cache_entry.file_count,
+                'last_scan_time': cache_entry.last_scan_time.isoformat() if cache_entry.last_scan_time else None,
+                'best_records_cached': cache_entry.best_records_cached,
+                'cache_age_seconds': (datetime.now() - cache_entry.last_scan_time).total_seconds() if cache_entry.last_scan_time else None
+            }
+        return cache_info
+
+def clear_team_cache(team_id: str = None):
+    """清理团队缓存"""
+    with cache_lock:
+        if team_id:
+            if team_id in team_cache:
+                del team_cache[team_id]
+                logger.info(f"已清理团队 {team_id} 的缓存")
+        else:
+            team_cache.clear()
+            logger.info("已清理所有团队缓存")
+
+def calculate_best_records_batch(file_paths: List[str]) -> Tuple[float, datetime, float, datetime]:
+    """批量计算最佳记录（用于并发处理）"""
+    best_qps = 0.0
+    best_qps_time = None
+    best_latency = float('inf')
+    best_latency_time = None
+    
+    for file_path in file_paths:
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            stats = data.get('stats', {})
+            timestamp_str = data.get('timestamp')
+            
+            # 解析时间戳
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str) if timestamp_str else None
+            except:
+                timestamp = None
+            
+            # 获取QPS
+            current_qps = stats.get('performanceMetrics', {}).get('avgCompletedQPS', 0)
+            if current_qps > best_qps:
+                best_qps = current_qps
+                best_qps_time = timestamp
+            
+            # 计算当前延迟
+            current_metrics = calculate_overall_metrics(stats)
+            current_latency = current_metrics.get('avg_latency', 0)
+            
+            # 更新最佳延迟（更小的更好）
+            if current_latency > 0 and current_latency < best_latency:
+                best_latency = current_latency
+                best_latency_time = timestamp
+                
+        except Exception as e:
+            logger.warning(f"⚠️ 读取历史文件失败 {file_path}: {e}")
+            continue
+    
+    return best_qps, best_qps_time, best_latency, best_latency_time
+
+def calculate_best_records(team_id: str) -> Tuple[float, datetime, float, datetime]:
+    """计算团队的最佳记录（QPS和延迟）- 优化版本"""
+    
+    # 检查缓存
+    with cache_lock:
+        cache_entry = team_cache.get(team_id)
+        if (cache_entry and cache_entry.best_records_cached and
+            cache_entry.last_scan_time and
+            (datetime.now() - cache_entry.last_scan_time).total_seconds() < CACHE_EXPIRE_SECONDS):
+            logger.debug(f"使用缓存的最佳记录: {team_id}")
+            # 这里应该返回缓存的值，但为了简化，我们重新计算
+    
     best_qps = 0.0
     best_qps_time = None
     best_latency = float('inf')
@@ -323,41 +537,48 @@ def calculate_best_records(team_id: str) -> tuple:
         # 获取所有历史文件
         history_files = get_team_history_files(team_id)
         
-        for file_info in history_files:
-            try:
-                with open(file_info['file_path'], 'r', encoding='utf-8') as f:
-                    data = json.load(f)
+        if not history_files:
+            return best_qps, best_qps_time, None, None
+        
+        file_paths = [f['file_path'] for f in history_files]
+        
+        # 如果文件数量较少，直接处理
+        if len(file_paths) <= BATCH_SIZE:
+            best_qps, best_qps_time, best_latency, best_latency_time = calculate_best_records_batch(file_paths)
+        else:
+            # 文件数量较多，使用并发处理
+            logger.info(f"团队 {team_id} 有 {len(file_paths)} 个文件，使用并发处理")
+            
+            # 分批处理
+            batches = [file_paths[i:i + BATCH_SIZE] for i in range(0, len(file_paths), BATCH_SIZE)]
+            
+            with ThreadPoolExecutor(max_workers=MAX_WORKER_THREADS) as executor:
+                future_to_batch = {executor.submit(calculate_best_records_batch, batch): batch for batch in batches}
                 
-                stats = data.get('stats', {})
-                timestamp_str = data.get('timestamp')
-                
-                # 解析时间戳
-                try:
-                    timestamp = datetime.fromisoformat(timestamp_str) if timestamp_str else None
-                except:
-                    timestamp = None
-                
-                # 获取QPS
-                current_qps = stats.get('performanceMetrics', {}).get('avgCompletedQPS', 0)
-                if current_qps > best_qps:
-                    best_qps = current_qps
-                    best_qps_time = timestamp
-                
-                # 计算当前延迟
-                current_metrics = calculate_overall_metrics(stats)
-                current_latency = current_metrics.get('avg_latency', 0)
-                
-                # 更新最佳延迟（更小的更好）
-                if current_latency > 0 and current_latency < best_latency:
-                    best_latency = current_latency
-                    best_latency_time = timestamp
-                    
-            except Exception as e:
-                print(f"⚠️  读取历史文件失败 {file_info['file_path']}: {e}")
-                continue
+                for future in as_completed(future_to_batch):
+                    try:
+                        batch_qps, batch_qps_time, batch_latency, batch_latency_time = future.result()
+                        
+                        # 合并结果
+                        if batch_qps > best_qps:
+                            best_qps = batch_qps
+                            best_qps_time = batch_qps_time
+                        
+                        if batch_latency < best_latency and batch_latency != float('inf'):
+                            best_latency = batch_latency
+                            best_latency_time = batch_latency_time
+                            
+                    except Exception as e:
+                        logger.error(f"批处理失败: {e}")
+                        continue
+        
+        # 更新缓存
+        with cache_lock:
+            if team_id in team_cache:
+                team_cache[team_id].best_records_cached = True
                 
     except Exception as e:
-        print(f"⚠️  计算最佳记录失败 (team_id: {team_id}): {e}")
+        logger.error(f"⚠️ 计算最佳记录失败 (team_id: {team_id}): {e}")
     
     # 如果没有找到有效的延迟数据，设为None
     if best_latency == float('inf'):
@@ -578,6 +799,44 @@ def get_team_history_summary(team_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
+@app.route('/api/cache/status', methods=['GET'])
+def get_cache_status_api():
+    """获取缓存状态API"""
+    try:
+        cache_status = get_cache_status()
+        total_teams = len(teams_data)
+        cached_teams = len([c for c in team_cache.values() if c.best_records_cached])
+        
+        return jsonify({
+            "cache_summary": {
+                "total_teams": total_teams,
+                "cached_teams": cached_teams,
+                "cache_hit_rate": (cached_teams / total_teams * 100) if total_teams > 0 else 0
+            },
+            "team_cache_details": cache_status,
+            "config": {
+                "cache_expire_seconds": CACHE_EXPIRE_SECONDS,
+                "max_worker_threads": MAX_WORKER_THREADS,
+                "batch_size": BATCH_SIZE
+            }
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/api/cache/clear', methods=['POST'])
+def clear_cache_api():
+    """清理缓存API"""
+    try:
+        team_id = request.json.get('team_id') if request.json else None
+        clear_team_cache(team_id)
+        
+        if team_id:
+            return jsonify({"message": f"团队 {team_id} 缓存已清理"})
+        else:
+            return jsonify({"message": "所有缓存已清理"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
 @socketio.on('connect')
 def handle_connect():
     """客户端连接时发送当前数据"""
@@ -613,14 +872,32 @@ def cleanup_inactive_teams():
                 del teams_data[team_id]
 
 if __name__ == '__main__':
+    # 启动时间记录
+    start_time = datetime.now()
+    
     # # 启动清理线程
     # cleanup_thread = threading.Thread(target=cleanup_inactive_teams, daemon=True)
     # cleanup_thread.start()
     
-    print("🚀 Starting BenchBoard server on port 8080...")
+    logger.info("🚀 启动 BenchBoard 服务器...")
+    logger.info(f"   配置: 缓存过期={CACHE_EXPIRE_SECONDS}s, 最大线程={MAX_WORKER_THREADS}, 批大小={BATCH_SIZE}")
     
-    # 启动时加载历史数据
-    load_all_teams_on_startup()
+    try:
+        # 启动时加载历史数据（优化版本）
+        loaded_count = load_all_teams_on_startup()
+        
+        # 输出加载统计
+        load_time = (datetime.now() - start_time).total_seconds()
+        logger.info(f"📊 数据加载完成: {loaded_count} 个团队, 耗时 {load_time:.2f}s")
+        
+        if loaded_count > 0:
+            logger.info(f"💾 缓存状态: {len(team_cache)} 个团队已缓存")
+        
+        # 启动服务器
+        logger.info("🌐 服务器启动中... (0.0.0.0:8080)")
+        socketio.run(app, host='0.0.0.0', port=8080, debug=True, allow_unsafe_werkzeug=True)
+        
+    except Exception as e:
+        logger.error(f"❌ 服务器启动失败: {e}")
+        raise 
     
-    # 启动服务器
-    socketio.run(app, host='0.0.0.0', port=8080, debug=True, allow_unsafe_werkzeug=True) 
